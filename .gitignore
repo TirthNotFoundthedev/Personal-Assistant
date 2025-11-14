@@ -41,3 +41,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Gemini specific files
+.gemini/
+GEMINI.md
+
+# Sensitive files
+client_secret.json
+token.json
