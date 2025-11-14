@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+.tox/
+.coverage
+.coverage.*
+.hypothesis/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.benchmarks
+
+# Editor-specific
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.Trashes
+Thumbs.db
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment variables
+.env
+.flaskenv
+.env.local
+.env.*.local
+
+# Logs
+*.log
