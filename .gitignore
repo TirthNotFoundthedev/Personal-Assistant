@@ -49,3 +49,6 @@ GEMINI.md
 # Sensitive files
 client_secret.json
 token.json
+
+# PyInstaller files
+*.spec
