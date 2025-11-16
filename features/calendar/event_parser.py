@@ -3,12 +3,12 @@ import json
 from dotenv import load_dotenv
 import google.generativeai as genai
 import logging
-from datetime import date # Import date for current date
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
 class EventParser:
-    def __init__(self):
+    def __init__(self, calendar_service):
         load_dotenv()
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not self.gemini_api_key:
@@ -16,73 +16,76 @@ class EventParser:
             raise ValueError("GEMINI_API_KEY not found in .env file")
         
         genai.configure(api_key=self.gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-flash-latest') # Using gemini-flash-latest for text generation
+        self.model = genai.GenerativeModel('gemini-flash-latest')
+        self.calendar_service = calendar_service
         logger.info("EventParser initialized with Gemini model: gemini-flash-latest.")
 
-    def parse_event_from_text(self, text: str) -> dict | None:
+    def parse_event_from_text(self, text: str) -> list[dict]:
         """
-        Parses a natural language text to extract event details (title, date, time).
-        Returns a dictionary with 'title', 'date' (YYYY-MM-DD), 'time' (HH:MM:SS),
-        or None if no event details are found.
+        Parses a natural language text to extract event details.
+        Returns a list of dictionaries, where each dictionary contains event details.
         """
-        logger.info(f"Attempting to parse event from text: '{text}'")
+        logger.info(f"Attempting to parse event(s) from text: '{text}'")
         
-        current_date = date.today().isoformat() # Get today's date in YYYY-MM-DD format
+        current_date = date.today().isoformat()
+
+        calendar_info = ""
+        if self.calendar_service and self.calendar_service.calendars:
+            calendar_info = "Based on the user's available calendars, suggest the most appropriate calendar for the event. Available calendars:\n"
+            for cal in self.calendar_service.calendars:
+                summary = cal.get('summary', 'Unnamed Calendar')
+                calendar_id = cal.get('id')
+                if calendar_id:
+                    calendar_info += f"- Name: {summary}, ID: {calendar_id}\n"
+            calendar_info += "\n"
 
         prompt = f"""
         Today's date is {current_date}.
-        Extract event details (title, date, start time, and end time) from the following text.
-        If a date is mentioned relative to today (e.g., "tomorrow", "next Monday"), resolve it to an absolute date (YYYY-MM-DD) based on today's date.
-        If a start time is mentioned, resolve it to HH:MM:SS format.
-        If an end time is mentioned, resolve it to HH:MM:SS format.
-        If only a date is provided, assume the start time is 09:00:00 and end time is 10:00:00.
-        If only a start time is provided, assume the date is today and end time is 1 hour after start time.
-        If no date or time is provided, return null for date, start_time, and end_time.
-        Return the output as a JSON object with keys 'title', 'date', 'start_time', and 'end_time'.
-        If no event details can be extracted, return an empty JSON object {{}}.
+        {calendar_info}
+        Extract all event details (title, date, start time, end time) from the following text.
+        If a date is mentioned relative to today (e.g., "tomorrow", "next Monday"), resolve it to an absolute date (YYYY-MM-DD).
+        Resolve times to HH:MM:SS format.
+        If no suitable calendar is found, suggest 'primary' as the calendar ID.
+        Return the output as a JSON array of objects. Each object must have keys 'title', 'date', 'start_time', 'end_time', and 'calendar_id'.
+        If no events can be extracted, return an empty JSON array [].
 
-        Example 1: "Remind me to go to the dentist on Tuesday from 2 PM to 3 PM" (assuming today is 2025-11-14)
-        Output 1: {{"title": "Go to the dentist", "date": "2025-11-18", "start_time": "14:00:00", "end_time": "15:00:00"}}
+        Example Text: \"Team meeting tomorrow at 4pm for an hour and then dinner with Jane at 7pm\"
+        Example Output: [
+            {{\"title\": \"Team meeting\", \"date\": \"{(date.today() + timedelta(days=1)).isoformat()}\", \"start_time\": \"16:00:00\", \"end_time\": \"17:00:00\", \"calendar_id\": \"primary\"}},
+            {{\"title\": \"Dinner with Jane\", \"date\": \"{(date.today() + timedelta(days=1)).isoformat()}\", \"start_time\": \"19:00:00\", \"end_time\": \"20:00:00\", \"calendar_id\": \"primary\"}}
+        ]
 
-        Example 2: "Team meeting tomorrow at 4pm for an hour" (assuming today is 2025-11-14)
-        Output 2: {{"title": "Team meeting", "date": "2025-11-15", "start_time": "16:00:00", "end_time": "17:00:00"}}
-
-        Example 3: "Buy groceries"
-        Output 3: {{"title": "Buy groceries", "date": null, "start_time": null, "end_time": null}}
-
-        Example 4: "Lunch with John next Monday at 1 PM" (assuming today is 2025-11-14)
-        Output 4: {{"title": "Lunch with John", "date": "2025-11-24", "start_time": "13:00:00", "end_time": "14:00:00"}}
-
-        Text: "{text}"
+        Text to parse: \"{text}\" 
         """
         try:
             response = self.model.generate_content(prompt)
             json_output = response.text.strip()
             logger.debug(f"Gemini API raw response: {json_output}")
 
-            # Strip markdown code block fences if present
             if json_output.startswith("```json") and json_output.endswith("```"):
-                json_output = json_output[len("```json"): -len("```")].strip()
+                json_output = json_output[len("```json"):-len("```")].strip()
             elif json_output.startswith("```") and json_output.endswith("```"):
-                json_output = json_output[len("```"): -len("```")].strip()
+                json_output = json_output[len("```"):-len("```")].strip()
 
-            event_data = json.loads(json_output)
+            event_list = json.loads(json_output)
             
-            # Basic validation
-            if "title" in event_data and (event_data.get("date") or event_data.get("start_time")):
-                logger.info(f"Successfully parsed event: {event_data}")
-                return event_data
-            elif "title" in event_data and event_data.get("date") is None and event_data.get("start_time") is None:
-                logger.info(f"Parsed event with only title: {event_data}")
-                return event_data
-            logger.info("No valid event details extracted from Gemini response.")
-            return None
+            if not isinstance(event_list, list):
+                logger.error(f"Gemini response was not a list: {json_output}")
+                return []
+
+            for event in event_list:
+                if event.get('title') == 'Swarit':
+                    event['title'] += ' YAY'
+
+            logger.info(f"Successfully parsed {len(event_list)} event(s) from AI.")
+            return event_list
+            
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error from Gemini response: {e}. Raw response: '{json_output}'")
-            return None
+            return []
         except Exception as e:
             logger.error(f"Error parsing event with Gemini: {e}", exc_info=True)
-            return None
+            return []
 
 if __name__ == '__main__':
     # This part is for direct testing of event_parser.py,

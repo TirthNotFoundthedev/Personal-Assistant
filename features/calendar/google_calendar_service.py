@@ -12,7 +12,7 @@ from dotenv import load_dotenv # Import load_dotenv
 logger = logging.getLogger(__name__)
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 class GoogleCalendarService:
     def __init__(self, credentials_path='client_secret.json', token_path='token.json'):
@@ -32,6 +32,11 @@ class GoogleCalendarService:
         except pytz.UnknownTimeZoneError:
             logger.error(f"Unknown timezone '{timezone_str}' specified in CALENDAR_TIMEZONE. Please use a valid tz database name.")
             raise ValueError(f"Unknown timezone '{timezone_str}'")
+
+        self.calendars = self._get_all_calendars() # Fetch and store all calendars
+        self.calendar_names_to_ids = {cal['summary'].lower(): cal['id'] for cal in self.calendars}
+        self.calendar_ids_to_names = {cal['id']: cal['summary'] for cal in self.calendars}
+        logger.info(f"Loaded {len(self.calendars)} calendars.")
 
         logger.info(f"GoogleCalendarService initialized. Configured timezone: {self.timezone}")
 
@@ -68,16 +73,31 @@ class GoogleCalendarService:
             logger.error(f"An error occurred during Google Calendar API service build: {error}", exc_info=True)
             return None
 
-    def create_event(self, summary: str, start_datetime: datetime.datetime, end_datetime: datetime.datetime = None, description: str = None):
+    def _get_all_calendars(self):
+        """Fetches all calendars the user has access to."""
+        logger.info("Fetching all calendars.")
+        try:
+            calendar_list = self.service.calendarList().list().execute()
+            calendars = calendar_list.get('items', [])
+            logger.info(f"Successfully fetched {len(calendars)} calendars.")
+            for cal in calendars:
+                logger.debug(f"Calendar: Name='{cal.get('summary')}', ID='{cal.get('id')}', AccessRole='{cal.get('accessRole')}'")
+            return calendars
+        except HttpError as error:
+            logger.error(f"An error occurred while fetching calendars: {error}", exc_info=True)
+            return []
+
+    def create_event(self, summary: str, start_datetime: datetime.datetime, end_datetime: datetime.datetime = None, description: str = None, calendar_id: str = 'primary'):
         """
-        Creates a new event on the user's primary Google Calendar.
+        Creates a new event on the specified Google Calendar.
         :param summary: Title of the event.
         :param start_datetime: datetime object for the start of the event.
         :param end_datetime: Optional datetime object for the end of the event. If None, defaults to 1 hour after start.
         :param description: Optional description for the event.
+        :param calendar_id: The ID of the calendar to create the event in. Defaults to 'primary'.
         :return: The created event object or None if an error occurred.
         """
-        logger.info(f"Attempting to create event: '{summary}' starting at {start_datetime}")
+        logger.info(f"Attempting to create event: '{summary}' starting at {start_datetime} in calendar {calendar_id}")
         if end_datetime is None:
             end_datetime = start_datetime + datetime.timedelta(hours=1)
 
@@ -102,12 +122,36 @@ class GoogleCalendarService:
         logger.debug(f"Event body prepared: {event}")
 
         try:
-            event = self.service.events().insert(calendarId='primary', body=event).execute()
+            event = self.service.events().insert(calendarId=calendar_id, body=event).execute()
             logger.info(f"Event created successfully: {event.get('htmlLink')}")
             return event
         except HttpError as error:
             logger.error(f"An error occurred while creating event: {error}", exc_info=True)
             return None
+
+    def get_upcoming_events(self, num_events: int = 10):
+        """
+        Fetches upcoming events from the user's primary Google Calendar.
+        :param num_events: The maximum number of events to retrieve.
+        :return: A list of upcoming event dictionaries, or an empty list if an error occurred.
+        """
+        logger.info(f"Attempting to fetch {num_events} upcoming events.")
+        try:
+            now = datetime.datetime.now(self.timezone)
+            events_result = self.service.events().list(
+                calendarId='primary',
+                timeMin=now.isoformat(),
+                maxResults=num_events,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            logger.debug(f"Raw events fetched from Google Calendar: {events}") # Added debug log
+            logger.info(f"Successfully fetched {len(events)} events.")
+            return events
+        except HttpError as error:
+            logger.error(f"An error occurred while fetching events: {error}", exc_info=True)
+            return []
 
 if __name__ == '__main__':
     # This part is for testing the calendar service directly.
