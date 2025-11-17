@@ -1,9 +1,10 @@
 import os
 from dotenv import load_dotenv
-from telegram.ext import MessageHandler, filters, CommandHandler
+from telegram.ext import CommandHandler
+from features.event_creation import EventCreationHandler
+from features.slot_management import SlotManagementHandler
+from utils.logger import setup_logging
 from telegram_bot import TelegramBot
-from features.calendar.calendar_handler import CalendarHandler
-from utils.logger import setup_logging # Import the setup_logging function
 
 def main():
     # Initialize logging first
@@ -15,14 +16,16 @@ def main():
     # Initialize Telegram Bot
     bot = TelegramBot()
 
-    # Initialize Calendar Handler
-    calendar_handler = CalendarHandler()
+    # Initialize new handlers
+    event_creation_handler = EventCreationHandler()
+    slot_management_handler = SlotManagementHandler()
 
-    # Register Calendar Handler for text messages
-    bot.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calendar_handler.handle_calendar_message))
+    # Get the conversation handler for event creation
+    event_conv_handler = event_creation_handler.get_conversation_handler()
 
-    # Register command handler for showing events
-    bot.application.add_handler(CommandHandler("showevents", calendar_handler.handle_show_events_message))
+    # Register handlers
+    bot.application.add_handler(event_conv_handler)
+    bot.application.add_handler(CommandHandler("schedule", slot_management_handler.handle_schedule_command))
 
     # Start the bot
     bot.run()
