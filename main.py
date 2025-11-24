@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 from telegram.ext import CommandHandler
-from features.event_creation import EventCreationHandler
-from features.slot_management import SlotManagementHandler
+from features.calendar.event_creation import EventCreationHandler
+from features.calendar.slot_management import SlotManagementHandler
 from utils.logger import setup_logging
 from telegram_bot import TelegramBot
 

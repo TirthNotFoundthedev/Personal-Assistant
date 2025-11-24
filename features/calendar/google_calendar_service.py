@@ -91,3 +91,33 @@ class GoogleCalendarService:
         except HttpError as error:
             logger.error(f"An error occurred while fetching calendars: {error}")
             return []
+
+    def get_all_calendars(self) -> list:
+        """Fetches all calendars the user has access to."""
+        try:
+            calendar_list = self.service.calendarList().list().execute()
+            return calendar_list.get('items', [])
+        except HttpError as error:
+            logger.error(f"An error occurred while fetching all calendars: {error}")
+            return []
+
+    def get_events_in_range(self, calendar_id: str, start_datetime: datetime.datetime, end_datetime: datetime.datetime) -> list:
+        """
+        Fetches events for a specific calendar within a given time range.
+        :param calendar_id: The ID of the calendar to fetch events from.
+        :param start_datetime: The start of the time range (datetime object).
+        :param end_datetime: The end of the time range (datetime object).
+        :return: A list of event dictionaries.
+        """
+        try:
+            events_result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=start_datetime.isoformat(),
+                timeMax=end_datetime.isoformat(),
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            return events_result.get('items', [])
+        except HttpError as error:
+            logger.error(f"An error occurred while fetching events for calendar {calendar_id}: {error}")
+            return []

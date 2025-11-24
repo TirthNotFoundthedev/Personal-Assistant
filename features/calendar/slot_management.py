@@ -1,6 +1,6 @@
 import logging
 import datetime
-from features.google_calendar_service import GoogleCalendarService
+from .google_calendar_service import GoogleCalendarService
 
 logger = logging.getLogger(__name__)
 
