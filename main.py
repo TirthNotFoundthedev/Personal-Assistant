@@ -16,8 +16,8 @@ async def voice_processing_middleware(update, context):
         await update.message.reply_text("Listening... 👂")
         text = await transcribe_voice(update)
         if text:
-            # Modify the update object in-place
-            update.message.text = text
+            # Modify the update object in-place using object.__setattr__ to bypass immutability
+            object.__setattr__(update.message, 'text', text)
             await update.message.reply_text(f"I heard: \"{text}\"")
         else:
             await update.message.reply_text("Sorry, I couldn't understand the audio.")
